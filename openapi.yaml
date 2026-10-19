@@ -1,0 +1,472 @@
+openapi: 3.1.0
+info:
+  title: Student Project API
+  version: 1.0.0
+  description: |
+    Tələbə layihələrini siyahılamaq, açmaq, yaratmaq və qismən yeniləmək
+    üçün REST API müqaviləsi. Bu repo işlək server deyil.
+    Bütün cavab gövdələri JSON-dur. POST və PATCH JSON gövdəsi tələb edir.
+    JSON sintaksisi pozulduqda 400, düzgün JSON sxemə uyğun olmadıqda 422
+    qaytarılır. Boş sorğu gövdəsi də 422 ilə rədd edilir.
+    Müsbət tam ədəd olmayan id 422, düzgün id ilə tapılmayan layihə 404 verir.
+    Əvvəl id formatı və sorğu gövdəsi yoxlanılır, sonra layihə axtarılır.
+    Buna görə həm gövdə səhv, həm layihə mövcud deyilsə 422 qaytarılır.
+    Null və naməlum sahələr qəbul edilmir. Autentifikasiya, səhifələmə,
+    filtrləmə, silmə və PUT bu müqavilənin əhatəsinə daxil deyil.
+servers:
+  - url: http://localhost:3000
+    description: Planlaşdırılmış lokal ünvan; bu tapşırıqda server işləmir.
+tags:
+  - name: Projects
+    description: Tələbə layihələri ilə əməliyyatlar.
+security: []
+paths:
+  /projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: Layihələri siyahıla
+      description: |
+        Sorğu gövdəsi və məcburi parametrlər yoxdur.
+        Bütün layihələr id üzrə artan sıra ilə düz JSON massivində qaytarılır.
+        Layihə yoxdursa 404 deyil, 200 və boş massiv qaytarılır.
+      responses:
+        '200':
+          description: Layihələrin siyahısı.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+              examples:
+                projects:
+                  summary: Bir layihədən ibarət siyahı
+                  value:
+                    - id: 1
+                      name: Tələbə portalı
+                      description: Tələbələr üçün layihə idarəetməsi.
+                      status: planned
+                      createdAt: '2026-10-19T12:00:00Z'
+                      updatedAt: '2026-10-19T12:00:00Z'
+                empty:
+                  summary: Layihə olmadıqda
+                  value: []
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Layihə yarat
+      description: |
+        Gövdədə name məcburidir. description göndərilməzsə boş sətir,
+        status göndərilməzsə planned qəbul edilir. Server id, createdAt və
+        updatedAt yaradır; yaradılma anında hər iki vaxt eynidir.
+        Server sahələrini və ya başqa naməlum sahələri göndərmək 422 verir.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProject'
+            examples:
+              full:
+                summary: Bütün yazıla bilən sahələr
+                value:
+                  name: Tələbə portalı
+                  description: Tələbələr üçün layihə idarəetməsi.
+                  status: planned
+              minimal:
+                summary: Yalnız məcburi sahə
+                value:
+                  name: Tələbə portalı
+      responses:
+        '201':
+          description: Layihə yaradıldı; tam layihə və Location başlığı qaytarılır.
+          headers:
+            Location:
+              description: Yaradılmış layihənin nisbi resurs ünvanı; uğurlu cavabda verilir.
+              schema:
+                type: string
+                pattern: '^/projects/[1-9][0-9]*$'
+              example: /projects/1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              examples:
+                created:
+                  $ref: '#/components/examples/ProjectCreated'
+                withDefaults:
+                  summary: Minimal sorğuya standart dəyərlərlə cavab
+                  value:
+                    id: 1
+                    name: Tələbə portalı
+                    description: ''
+                    status: planned
+                    createdAt: '2026-10-19T12:00:00Z'
+                    updatedAt: '2026-10-19T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/MalformedJson'
+        '422':
+          $ref: '#/components/responses/InvalidCreateProject'
+  /projects/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Bir layihəyə bax
+      description: |
+        id yol parametri məcburidir. Sorğu gövdəsi yoxdur.
+        Düzgün müsbət id ilə layihə tapılmadıqda 404 qaytarılır.
+      responses:
+        '200':
+          description: Layihənin tam məlumatı.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              examples:
+                project:
+                  $ref: '#/components/examples/ProjectCreated'
+        '404':
+          $ref: '#/components/responses/ProjectNotFound'
+        '422':
+          $ref: '#/components/responses/InvalidId'
+    patch:
+      tags: [Projects]
+      operationId: updateProject
+      summary: Mövcud layihəni qismən yenilə
+      description: |
+        id və JSON gövdəsi məcburidir. name, description və status
+        sahələrindən ən azı biri göndərilməlidir; konkret bir sahə ayrıca
+        məcburi deyil. Göndərilməyən sahələr dəyişmir. description üçün
+        boş sətir təsviri təmizləyir; null sahəni silmir, 422 verir.
+        Yeniləmə atomikdir: hər hansı sahə səhvdirsə heç bir dəyişiklik edilmir.
+        id və createdAt dəyişməz. Real dəyər dəyişəndə updatedAt yenilənir;
+        eyni dəyərlər göndərilərsə 200 və dəyişməz vaxtlarla layihə qaytarılır.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProject'
+            examples:
+              changeStatus:
+                summary: Yalnız statusu yenilə
+                value:
+                  status: in_progress
+              changeNameAndDescription:
+                summary: İki sahəni yenilə
+                value:
+                  name: Yeni tələbə portalı
+                  description: Yenilənmiş layihə təsviri.
+              clearDescription:
+                summary: Təsviri təmizlə
+                value:
+                  description: ''
+      responses:
+        '200':
+          description: Yenilənmiş layihənin tam məlumatı.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              examples:
+                updated:
+                  $ref: '#/components/examples/ProjectUpdated'
+        '400':
+          $ref: '#/components/responses/MalformedJson'
+        '404':
+          $ref: '#/components/responses/ProjectNotFound'
+        '422':
+          $ref: '#/components/responses/InvalidUpdateProject'
+components:
+  parameters:
+    ProjectId:
+      name: id
+      in: path
+      required: true
+      description: |
+        Layihənin müsbət tam ədəd identifikatoru. Məsələn, 1 düzgündür;
+        abc, 0, -1 və 1.5 səhvdir və 422 qaytarır.
+      schema:
+        type: integer
+        minimum: 1
+      example: 1
+  schemas:
+    ProjectName:
+      type: string
+      minLength: 1
+      maxLength: 100
+      pattern: '\S'
+      description: |
+        1–100 simvol; ən azı bir qeyri-boşluq simvolu olmalıdır.
+        Trim və başqa avtomatik normallaşdırma edilmir.
+      example: Tələbə portalı
+    ProjectDescription:
+      type: string
+      maxLength: 1000
+      description: 0–1000 simvol; boş sətir qəbul edilir.
+      example: Tələbələr üçün layihə idarəetməsi.
+    ProjectStatus:
+      type: string
+      enum: [planned, in_progress, completed]
+      description: Layihənin planlaşdırılmış, icrada və ya tamamlanmış vəziyyəti.
+      example: planned
+    Project:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          readOnly: true
+          description: Serverin yaratdığı unikal identifikator.
+          example: 1
+        name:
+          $ref: '#/components/schemas/ProjectName'
+        description:
+          $ref: '#/components/schemas/ProjectDescription'
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        createdAt:
+          type: string
+          format: date-time
+          pattern: 'Z$'
+          readOnly: true
+          description: Serverin təyin etdiyi ISO 8601 UTC yaradılma vaxtı.
+          example: '2026-10-19T12:00:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: 'Z$'
+          readOnly: true
+          description: Serverin təyin etdiyi ISO 8601 UTC son dəyişiklik vaxtı.
+          example: '2026-10-19T12:00:00Z'
+    CreateProject:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: '#/components/schemas/ProjectName'
+        description:
+          allOf:
+            - $ref: '#/components/schemas/ProjectDescription'
+          default: ''
+        status:
+          allOf:
+            - $ref: '#/components/schemas/ProjectStatus'
+          default: planned
+    UpdateProject:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Ən azı bir yazıla bilən sahə məcburidir. Göndərilməyən sahələr üçün
+        standart dəyər tətbiq edilmir, əvvəlki dəyər saxlanılır.
+      properties:
+        name:
+          $ref: '#/components/schemas/ProjectName'
+        description:
+          $ref: '#/components/schemas/ProjectDescription'
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+    FieldError:
+      type: object
+      additionalProperties: false
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          minLength: 1
+          description: Səhvin yeri; body, body.name, body.status və ya path.id kimi.
+          example: body.name
+        message:
+          type: string
+          minLength: 1
+          example: name boş və ya yalnız boşluqlardan ibarət ola bilməz.
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, errors]
+      properties:
+        code:
+          type: string
+          enum: [NOT_FOUND, VALIDATION_ERROR, BAD_REQUEST]
+        message:
+          type: string
+          minLength: 1
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+    NotFoundError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            code:
+              const: NOT_FOUND
+            errors:
+              type: array
+              maxItems: 0
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            code:
+              const: VALIDATION_ERROR
+            errors:
+              type: array
+              minItems: 1
+    BadRequestError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            code:
+              const: BAD_REQUEST
+            errors:
+              type: array
+              minItems: 1
+  responses:
+    ProjectNotFound:
+      description: Düzgün müsbət id ilə layihə tapılmadı; code NOT_FOUND-dur.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NotFoundError'
+          examples:
+            notFound:
+              $ref: '#/components/examples/ProjectNotFound'
+    InvalidId:
+      description: id müsbət tam ədəd deyil; code VALIDATION_ERROR-dur.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          examples:
+            invalidId:
+              $ref: '#/components/examples/InvalidProjectId'
+    InvalidCreateProject:
+      description: |
+        name yoxdur, gövdə boşdur, sahə dəyəri/tipi səhvdir və ya naməlum
+        sahə göndərilib. code VALIDATION_ERROR-dur. Bütün aşkar edilmiş
+        validasiya səhvləri errors massivində qaytarılır.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          examples:
+            invalidData:
+              $ref: '#/components/examples/InvalidProjectData'
+            missingName:
+              summary: Məcburi name sahəsi yoxdur
+              value:
+                code: VALIDATION_ERROR
+                message: Göndərilən məlumat yanlışdır.
+                errors:
+                  - field: body.name
+                    message: name sahəsi məcburidir.
+            unknownField:
+              summary: Server tərəfindən idarə olunan id göndərilib
+              value:
+                code: VALIDATION_ERROR
+                message: Göndərilən məlumat yanlışdır.
+                errors:
+                  - field: body.id
+                    message: id yazıla bilən sahə deyil.
+    InvalidUpdateProject:
+      description: |
+        id səhvdir, gövdə boşdur, heç bir sahə verilməyib, sahə dəyəri/tipi
+        səhvdir və ya naməlum sahə göndərilib. code VALIDATION_ERROR-dur.
+        Bütün aşkar edilmiş validasiya səhvləri errors massivinə daxil edilir.
+        Layihə dəyişdirilmir; validasiya mövcudluq yoxlamasından əvvəldir.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          examples:
+            emptyPatch:
+              $ref: '#/components/examples/EmptyPatch'
+            invalidId:
+              $ref: '#/components/examples/InvalidProjectId'
+            invalidStatus:
+              summary: status üçün icazə verilməyən dəyər
+              value:
+                code: VALIDATION_ERROR
+                message: Göndərilən məlumat yanlışdır.
+                errors:
+                  - field: body.status
+                    message: status planned, in_progress və ya completed olmalıdır.
+    MalformedJson:
+      description: Sorğu gövdəsinin JSON sintaksisi pozulub; code BAD_REQUEST-dur.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BadRequestError'
+          examples:
+            malformedJson:
+              $ref: '#/components/examples/MalformedJson'
+  examples:
+    ProjectCreated:
+      summary: Yaradılmış və ya mövcud layihə
+      value:
+        id: 1
+        name: Tələbə portalı
+        description: Tələbələr üçün layihə idarəetməsi.
+        status: planned
+        createdAt: '2026-10-19T12:00:00Z'
+        updatedAt: '2026-10-19T12:00:00Z'
+    ProjectUpdated:
+      summary: Statusu yenilənmiş layihə
+      value:
+        id: 1
+        name: Tələbə portalı
+        description: Tələbələr üçün layihə idarəetməsi.
+        status: in_progress
+        createdAt: '2026-10-19T12:00:00Z'
+        updatedAt: '2026-10-19T12:30:00Z'
+    ProjectNotFound:
+      summary: GET və ya PATCH /projects/999 üçün 404
+      value:
+        code: NOT_FOUND
+        message: Layihə tapılmadı.
+        errors: []
+    InvalidProjectData:
+      summary: POST üçün name boş, status isə finished olduqda 422
+      value:
+        code: VALIDATION_ERROR
+        message: Göndərilən məlumat yanlışdır.
+        errors:
+          - field: body.name
+            message: name boş və ya yalnız boşluqlardan ibarət ola bilməz.
+          - field: body.status
+            message: status planned, in_progress və ya completed olmalıdır.
+    EmptyPatch:
+      summary: PATCH gövdəsi boş obyekt olduqda 422
+      value:
+        code: VALIDATION_ERROR
+        message: Göndərilən məlumat yanlışdır.
+        errors:
+          - field: body
+            message: name, description və ya status sahələrindən ən azı biri göndərilməlidir.
+    InvalidProjectId:
+      summary: id abc, 0, -1 və ya 1.5 olduqda 422
+      value:
+        code: VALIDATION_ERROR
+        message: Göndərilən məlumat yanlışdır.
+        errors:
+          - field: path.id
+            message: id müsbət tam ədəd olmalıdır.
+    MalformedJson:
+      summary: JSON sintaksisi yanlışdır
+      value:
+        code: BAD_REQUEST
+        message: Sorğu gövdəsi düzgün JSON deyil.
+        errors:
+          - field: body
+            message: JSON sintaksisi yanlışdır.
